@@ -1,0 +1,27 @@
+[package]
+name = "plotters-piston-eeg"
+version = "0.3.0"
+authors = ["Miguel <miguel.yrawo@gmail.com>","Arthur Julião <azrael.zila@gmail.com>","Hao Hou <haohou302@gmail.com>"]
+edition = "2018"
+license = "MIT"
+description = ""
+homepage = ""
+repository = ""
+readme = "README.md"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+piston_window = "0.120.0"
+serialport = "4.3.0"
+
+[dependencies.plotters-backend]
+git = "https://github.com/plotters-rs/plotters"
+
+[dev-dependencies]
+systemstat = "0.1.5"
+
+[dev-dependencies.plotters]
+default_features = true
+features = ["ttf", "all_series"]
+git = "https://github.com/plotters-rs/plotters"
