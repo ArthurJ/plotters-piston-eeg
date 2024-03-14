@@ -20,7 +20,7 @@ fn main() {
 
     let port_name = "/dev/ttyUSB0";
     let baud_rate = 115200;
-    let freq_quantity = 50;
+    let freq_quantity = 36;
 
     let mut port = serialport::new(port_name, baud_rate)
         .timeout(Duration::from_millis(10))
@@ -28,10 +28,11 @@ fn main() {
         .expect("Falha ao acessar porta.");
 
     while let Some(_) = draw_piston_window(&mut window, |b| {
-        let values = read_port(&port_name, &baud_rate, &mut port);
-        // let display_map = Map::from_iter(values.iter().map(|(x,y)| (f32::from_str(x).unwrap_or(-1.0).round() as i32,y)));
-        // println!("Final values: {:?}\nlen:{}", display_map, display_map.len());
+        let values = read_port(&mut port);
         println!("Final values: {:?}\nlen:{}", values, values.len());
+        // println!("Final frequencies: {:?}\nlen:{}",
+        //          values.keys().into_iter().map(|x| f32::from_str(x).unwrap_or(-1.0)).collect::<Vec<_>>(),
+        //          values.len());
 
         let root = b.into_drawing_area();
         root.fill(&WHITE)?;
@@ -42,7 +43,7 @@ fn main() {
             .set_label_area_size(LabelAreaPosition::Left, 40)
             .set_label_area_size(LabelAreaPosition::Bottom, 40)
             .set_label_area_size(LabelAreaPosition::Right, 40)
-            .build_cartesian_2d((-1..freq_quantity+1).into_segmented(), 0..2000)
+            .build_cartesian_2d((0..freq_quantity).into_segmented(), 0..2000)
             .unwrap();
 
         ctx.configure_mesh()
@@ -57,7 +58,7 @@ fn main() {
                 let x0 = SegmentValue::Exact(x.round() as i32);
                 let x1 = SegmentValue::Exact(x.round() as i32 + 1);
                 let mut bar = Rectangle::new([(x0, 0), (x1, y as i32)], RED.filled());
-                bar.set_margin(0, 0, 12, 12);
+                bar.set_margin(0, 0, 15, 15);
                 bar
             }))
             .unwrap();
@@ -66,11 +67,10 @@ fn main() {
     }) {}
 }
 
-fn read_port(port_name: &&str, baud_rate: &u32, port: &mut Box<dyn SerialPort>) -> Map<String, String> {
+fn read_port(port: &mut Box<dyn SerialPort>) -> Map<String, String> {
         let mut serial_buf: Vec<u8> = vec![0; 1000];
         let mut string_buf = String::new();
         let mut value_map = Map::new();
-        // println!("Receiving data on {} at {} baud:", &port_name, &baud_rate);
         loop {
             match port.read(serial_buf.as_mut_slice()) {
                 Ok(t) => {
