@@ -2,12 +2,12 @@ use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters_piston_eeg::draw_piston_window;
 use std::collections::BTreeMap as Map;
 use plotters::prelude::*;
-use std::io::{self, Read};
+use std::io::{self, BufRead, BufReader};
 use std::str::FromStr;
 use std::time::Duration;
 use serialport::SerialPort;
 
-const FPS: u32 = 10;
+const FPS: u32 = 30;
 
 fn main() {
 
@@ -18,7 +18,8 @@ fn main() {
 
     window.set_max_fps(FPS as u64);
 
-    let port_name = "/dev/ttyUSB0";
+    // let port_name = "/dev/ttyUSB0";
+    let port_name = "/dev/ttyACM0";
     let baud_rate = 115200;
     let freq_quantity = 36;
 
@@ -43,7 +44,7 @@ fn main() {
             .set_label_area_size(LabelAreaPosition::Left, 40)
             .set_label_area_size(LabelAreaPosition::Bottom, 40)
             .set_label_area_size(LabelAreaPosition::Right, 40)
-            .build_cartesian_2d((0..freq_quantity).into_segmented(), 0..2000)
+            .build_cartesian_2d((0..freq_quantity).into_segmented(), 0..3000)
             .unwrap();
 
         ctx.configure_mesh()
@@ -64,34 +65,30 @@ fn main() {
             .unwrap();
 
         Ok(())
-    }) {}
+    }){}
 }
 
 fn read_port(port: &mut Box<dyn SerialPort>) -> Map<String, String> {
-        let mut serial_buf: Vec<u8> = vec![0; 1000];
-        let mut string_buf = String::new();
-        let mut value_map = Map::new();
-        loop {
-            match port.read(serial_buf.as_mut_slice()) {
-                Ok(t) => {
-                    string_buf.push_str(&String::from_utf8_lossy(&serial_buf[..t]));
-                    // println!("{}\n", string_buf);
-                    string_buf
-                        .split("\r\n")
-                        .map(|s| s.split_ascii_whitespace().take(2).collect::<Vec<_>>())
-                        .filter(|s| s.len() == 2)
-                        .map(|a| (a[0].to_string(), a[1].to_string()))
-                        .filter(|(x, _)| x.is_ascii())
-                        .filter(|(x, _)| !x.starts_with("."))
-                        .filter(|(_, x)| !x.starts_with("."))
-                        .for_each(|(x, y)| { value_map.insert(x, y); });
+    let mut reader = BufReader::new(port);
+    let mut leitura = String::new();
+    let mut value_map = Map::new();
+    loop {
+        match reader.read_line(&mut leitura){
+            Ok(_) => {
+                leitura.split("\r\n")
+                    .map(|s| s.split_ascii_whitespace().take(2).collect::<Vec<_>>())
+                    .filter(|s| s.len() == 2)
+                    .map(|a| (a[0].to_string(), a[1].to_string()))
+                    .filter(|(x, _)| x.is_ascii())
+                    .filter(|(x, _)| !x.starts_with("."))
+                    .filter(|(_, x)| !x.starts_with("."))
+                    .for_each(|(x, y)| { value_map.insert(x, y); });
 
-                    // println!("{:?}\nlen={}", value_map, value_map.len());
+                // println!("Final values: {:?}\nlen:{}", value_map, value_map.len());
 
-                    if string_buf.contains("\r\n\r\n") { //Controle do tamanho do buffer
-                        // println!("Buffer dumped.");
-                        return value_map;
-                    }},
-                Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
-                Err(e) => eprintln!("{:?}", e),
-            }}}
+                if leitura.contains("\r\n\r\n") { //Controle do tamanho do buffer
+                    return value_map;
+                }}
+            Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
+            Err(e) => eprintln!("{:?}", e),
+        }}}
