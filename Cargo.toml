@@ -14,6 +14,15 @@ readme = "README.md"
 [dependencies]
 piston_window = "0.120.0"
 serialport = "4.3.0"
+bounded-vec-deque = "0.1.1"
+spectrum-analyzer = "1.5.0"
+
+splines = "4.3.1"
+
+num-complex = "0.4.5"
+rustfft = "6.2.0"
+
+dft = "0.5.5"
 
 [dependencies.plotters-backend]
 git = "https://github.com/plotters-rs/plotters"

@@ -3,7 +3,7 @@ int analogPin = A0; // terminal do meio de um potênciometro conectado ao pino a
 int val = 0;        // variável para guardar o valor lido
 
 void setup() {
-  Serial.begin(9600);           // configura a porta serial
+  Serial.begin(115200);           // configura a porta serial
 }
 
 void loop() {

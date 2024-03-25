@@ -14,7 +14,7 @@ These values can be changed in order to evaluate the functions
 */
 #define CHANNEL A0
 const uint16_t samples = 64*2; //This value MUST ALWAYS be a power of 2
-const float samplingFrequency = 35*2; //Hz, must be less than 10000 due to ADC
+const float samplingFrequency = 36*2; //Hz, must be less than 10000 due to ADC
 unsigned int sampling_period_us;
 unsigned long microseconds;
 
@@ -52,24 +52,10 @@ void loop()
       }
       microseconds += sampling_period_us;
   }
-  /* Print the results of the sampling according to time */
-  //Serial.println("Data:");
-  //PrintVector(vReal, samples, SCL_TIME);
-  FFT.windowing(FFTWindow::Hamming, FFTDirection::Forward);	/* Weigh data */
-  //Serial.println("Weighed data:");
-  //PrintVector(vReal, samples, SCL_TIME);
-  FFT.compute(FFTDirection::Forward); /* Compute FFT */
-  //Serial.println("Computed Real values:");
-  //PrintVector(vReal, samples, SCL_INDEX);
-  //Serial.println("Computed Imaginary values:");
-  //PrintVector(vImag, samples, SCL_INDEX);
-  FFT.complexToMagnitude(); /* Compute magnitudes */
-  //Serial.println("Computed magnitudes:");
+  FFT.windowing(FFTWindow::Hamming, FFTDirection::Forward);
+  FFT.compute(FFTDirection::Forward); 
+  FFT.complexToMagnitude();
   PrintVector(vReal, (samples >> 1), SCL_FREQUENCY);
-  // float x = FFT.majorPeak();
-  // Serial.println(x, 6); //Print out what frequency is the most dominant.
-  //while(1); /* Run Once */
-  // delay(100); /* Repeat after delay */
 }
 
 void PrintVector(float *vData, uint16_t bufferSize, uint8_t scaleType)
@@ -90,11 +76,9 @@ void PrintVector(float *vData, uint16_t bufferSize, uint8_t scaleType)
         abscissa = ((i * 1.0 * samplingFrequency) / samples);
 	break;
     }
+    Serial.println();
     Serial.print(abscissa, 6);
-   // if(scaleType==SCL_FREQUENCY)
-   //   Serial.print("Hz");
     Serial.print(" ");
-    Serial.println(vData[i], 4);
+    Serial.print(vData[i], 4);
   }
-  Serial.println();
 }
