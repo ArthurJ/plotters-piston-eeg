@@ -14,10 +14,8 @@ use spectrum_analyzer::{samples_fft_to_spectrum, FrequencyLimit};
 use spectrum_analyzer::windows::{hann_window};
 use spectrum_analyzer::scaling::divide_by_N_sqrt;
 
-
-
-
 mod frequency_reader;
+
 
 const LENGTH:usize = 4096;
 const FPS: u32 = 60;
@@ -83,7 +81,7 @@ fn spectrum_display(rx: Receiver<isize>) {
         let mut ctx =
             ChartBuilder::on(&root)
                 .margin(40)
-                .caption("FFT", ("sans-serif", 40))
+                .caption("", ("sans-serif", 40))
                 .set_label_area_size(LabelAreaPosition::Left, 60)
                 .set_label_area_size(LabelAreaPosition::Bottom, 40)
                 .set_label_area_size(LabelAreaPosition::Right, 60)
@@ -101,7 +99,7 @@ fn spectrum_display(rx: Receiver<isize>) {
             .draw().unwrap();
 
         /* Gráfico comum Interpolado----------------------------------------------------- */
-        let interp = interpolate_values_set((1..FREQ_QUANTITY),
+        let interp = interpolate_values_set((0..FREQ_QUANTITY),
                                             spectrum_window.data().iter()
                                                 .map(|(x, y)|
                                                     (x.val() as f64, y.val() as f64))
@@ -314,20 +312,21 @@ fn dft_display(rx: Receiver<isize>) {
 
 use splines::{Interpolation, Key, Spline};
 
-fn interpolate_values_set(range: std::ops::Range<i32>, points: &[(f64, f64)]) -> Vec<(i32, f64)> {
+fn interpolate_values_set(range: Range<i32>, points: &[(f64, f64)]) -> Vec<(i32, f64)> {
     // Criar um vetor de chaves para a interpolação spline
     let keys: Vec<Key<f64, f64>> =
         points.iter().map(|&(x, y)|
-            Key::new(x, y, Interpolation::Linear)).collect();
+            Key::new(x, y, Interpolation::Cosine)).collect();
 
     // Criar uma spline a partir das chaves
     let spline = Spline::from_vec(keys);
 
     // Interpolar os valores para cada x_new no intervalo fornecido
     let interpolated_values: Vec<(i32, f64)> = range
+        // .map(|x_new| (x_new, spline.sample(x_new as f64).unwrap_or(0.0)))
         .map(|x_new| (x_new, spline.clamped_sample(x_new as f64).unwrap_or(0.0)))
         .collect();
 
-    println!("{:?}", interpolated_values);
+    println!("{:?}\n", interpolated_values);
     interpolated_values
 }
