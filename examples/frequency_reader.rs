@@ -23,7 +23,6 @@ pub fn read_port(sender: SyncSender<isize>) {
         let mut leitura = String::new();
         match reader.read_line(&mut leitura) {
             Ok(_) => {
-                // print!("{}", leitura);
                 leitura.split("\n")
                     .filter(|x| !x.trim().is_empty())
                     .map(|x| isize::from_str(x.trim()).unwrap())
@@ -41,7 +40,6 @@ pub fn read_port(sender: SyncSender<isize>) {
             Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
             // Err(ref e) if e.kind() == io::ErrorKind::TimedOut => eprintln!("Reading Timeout!"),
             Err(e) => eprintln!("{:?}", e)
-            // println!("{:?}", valores);
         }
     }
 }
