@@ -29,7 +29,6 @@ pub fn read_port(sender: SyncSender<isize>) {
                     .map(|x| isize::from_str(x.trim()).unwrap())
                     .for_each(|x|
                         {
-                            // println!("{}", x);
                             match sender.send(x){
                                 Ok(_) => {}
                                 Err(e) => {
@@ -39,7 +38,8 @@ pub fn read_port(sender: SyncSender<isize>) {
                             };
                         });
             }
-            Err(ref e) if e.kind() == io::ErrorKind::TimedOut => eprintln!("Reading Timeout!"),
+            Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
+            // Err(ref e) if e.kind() == io::ErrorKind::TimedOut => eprintln!("Reading Timeout!"),
             Err(e) => eprintln!("{:?}", e)
             // println!("{:?}", valores);
         }

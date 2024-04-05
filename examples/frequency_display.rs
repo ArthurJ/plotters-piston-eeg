@@ -10,8 +10,8 @@ use plotters_piston_eeg::{draw_piston_window, PistonBackend};
 use std::sync::mpsc::Receiver;
 use std::thread;
 
-use spectrum_analyzer::{samples_fft_to_spectrum, FrequencyLimit};
-use spectrum_analyzer::windows::{hann_window};
+use spectrum_analyzer::{samples_fft_to_spectrum, FrequencyLimit, FrequencySpectrum};
+use spectrum_analyzer::windows::{hann_window, hamming_window, blackman_harris_4term, blackman_harris_7term};
 use spectrum_analyzer::scaling::divide_by_N_sqrt;
 
 mod frequency_reader;
@@ -20,7 +20,8 @@ mod frequency_reader;
 const LENGTH:usize = 4096;
 const FPS: u32 = 60;
 const FREQ_QUANTITY: i32 = 36;
-const Y_MAX: i32 = 50000;
+static mut Y_MAX: i32 = 100_000;
+static mut NORM: f32 = 1.0;
 
 
 fn main() {
@@ -45,8 +46,7 @@ fn spectrum_display(rx: Receiver<isize>) {
     window.set_max_fps(FPS as u64);
 
 
-    while let Some(_) = draw_piston_window(&mut window, |b| {
-
+    while let Some(_) = draw_piston_window(&mut window, |b| unsafe {
         for value in rx.try_iter().take(LENGTH) {
             samples.push_back(value);
         }
@@ -58,18 +58,11 @@ fn spectrum_display(rx: Receiver<isize>) {
 
         let window_samples: Vec<f32> = samples.iter().map(|&x| x as f32).collect();
         // println!("{:?}", samples);
-        let fft_window = hann_window(&window_samples);
 
-        let spectrum_window = samples_fft_to_spectrum(
-            &fft_window,
-            (LENGTH as f32 * 0.845).round() as u32,
-            // LENGTH as u32,
-            FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
-            // optional scale
-            None
-            // Some(&divide_by_N_sqrt)
-            // Some(&|val, info| val - info.min),
-        ).unwrap();
+        // let spectrum_window = calculate_window(&window_samples);
+        // let spectrum_window = calculate_window_softmax(&window_samples, 1.0);
+        // let spectrum_window = calculate_window_norm(&window_samples);
+        let spectrum_window = calculate_window_bh7(&window_samples);
 
         // for (fr, fr_val) in spectrum_window.data().iter() {
         //     println!("{}Hz => {}", fr, fr_val)
@@ -144,6 +137,79 @@ fn spectrum_display(rx: Receiver<isize>) {
     }){}
 }
 
+unsafe fn calculate_window_bh7(window_samples: &Vec<f32>) -> FrequencySpectrum{
+    Y_MAX = 250;
+    let fft_window = blackman_harris_7term(&window_samples);
+
+    samples_fft_to_spectrum(
+        &fft_window,
+        (LENGTH as f32 * 0.845).round() as u32,
+        FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
+        Some(&|val, info| {
+            // println!("{}", val);
+            val*1800000.0
+        }),
+    ).unwrap()
+}
+
+unsafe fn calculate_window_norm(window_samples: &Vec<f32>) -> FrequencySpectrum{
+    Y_MAX = 100;
+    let fft_window = hann_window(&window_samples);
+
+    NORM = window_samples.iter().fold(0.0, |sum, &num| sum + num.powf(2.0)).sqrt();
+    if NORM < 1.0{
+        NORM = 1.0;
+    }
+
+    samples_fft_to_spectrum(
+        &fft_window,
+        (LENGTH as f32 * 0.845).round() as u32,
+        FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
+        Some(&|val, info| {
+            // println!("{}", (val/NORM));
+            (10.0*val/NORM)
+        }
+        ),
+    ).unwrap()
+}
+
+
+unsafe fn calculate_window_softmax(window_samples: &Vec<f32>, temperature: f32) -> FrequencySpectrum{
+    Y_MAX = 20_000;
+    let max = window_samples.iter().fold(0.0, |pivot, &x| if pivot > x {pivot} else {x});
+
+    let normalized_window: Vec<f32> =  window_samples.iter().map(|&x| ((x/max)/temperature).exp() ).collect();
+    NORM = normalized_window.iter()
+        .fold(0.0, |sum, num| sum + num);
+    // println!("{}", NORM);
+
+    let fft_window = hamming_window(&normalized_window);
+
+    samples_fft_to_spectrum(
+        &fft_window,
+        (LENGTH as f32 * 0.845).round() as u32,
+        FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
+        Some(&move |val, info| ((val - info.min) / NORM)),
+    ).unwrap()
+}
+
+
+unsafe fn calculate_window(window_samples: &Vec<f32>) -> FrequencySpectrum{
+    Y_MAX = 30_000;
+    let fft_window = hann_window(&window_samples);
+
+    samples_fft_to_spectrum(
+        &fft_window,
+        (LENGTH as f32 * 0.845).round() as u32,
+        // (LENGTH-1) as u32,
+        FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
+        // // optional scale
+        None
+        // Some(&divide_by_N_sqrt)
+        // Some(&|val, info| val - info.min),
+    ).unwrap()
+}
+
 fn rustfft_display(rx: Receiver<isize>) {
 
     let mut samples = BoundedVecDeque::with_capacity(LENGTH, LENGTH);
@@ -156,7 +222,7 @@ fn rustfft_display(rx: Receiver<isize>) {
     window.set_max_fps(FPS as u64);
 
 
-    while let Some(_) = draw_piston_window(&mut window, |b| {
+    while let Some(_) = draw_piston_window(&mut window, |b| unsafe {
 
         for value in rx.try_iter().take(LENGTH) {
             samples.push_back(value);
@@ -240,7 +306,7 @@ fn dft_display(rx: Receiver<isize>) {
     window.set_max_fps(FPS as u64);
 
 
-    while let Some(_) = draw_piston_window(&mut window, |b| {
+    while let Some(_) = draw_piston_window(&mut window, |b| unsafe {
 
         for value in rx.try_iter().take(LENGTH) {
             samples.push_back(value);
@@ -318,7 +384,6 @@ fn interpolate_values_set(range: Range<i32>, points: &[(f64, f64)]) -> Vec<(i32,
         points.iter().map(|&(x, y)|
             Key::new(x, y, Interpolation::Cosine)).collect();
 
-    // Criar uma spline a partir das chaves
     let spline = Spline::from_vec(keys);
 
     // Interpolar os valores para cada x_new no intervalo fornecido
@@ -327,6 +392,5 @@ fn interpolate_values_set(range: Range<i32>, points: &[(f64, f64)]) -> Vec<(i32,
         .map(|x_new| (x_new, spline.clamped_sample(x_new as f64).unwrap_or(0.0)))
         .collect();
 
-    println!("{:?}\n", interpolated_values);
     interpolated_values
 }
