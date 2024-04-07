@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::thread;
 use std::ops::Range;
 use std::sync::mpsc;
@@ -14,6 +15,7 @@ use plotters::prelude::{Cartesian2d, Color, IntoDrawingArea, IntoSegmentedCoord,
 use plotters_piston_eeg::{draw_piston_window, PistonBackend};
 use plotters::coord::ranged1d::SegmentedCoord;
 use plotters::coord::types::{RangedCoordf32, RangedCoordf64, RangedCoordi32};
+use serialport::new;
 
 use spectrum_analyzer::{samples_fft_to_spectrum, FrequencyLimit, FrequencySpectrum};
 use spectrum_analyzer::windows::{hann_window, hamming_window, blackman_harris_4term, blackman_harris_7term};
@@ -67,8 +69,8 @@ fn spectrum_display(rx: Receiver<isize>) {
         // println!("{:?}", samples);
 
         // let spectrum_window = calculate_window(&window_samples);
-        // let spectrum_window = calculate_window_softmax(&window_samples, 1.0);
-        let spectrum_window = calculate_window_norm(&window_samples);
+        let spectrum_window = calculate_window_softmax(&window_samples, 10.0);
+        // let spectrum_window = calculate_window_norm(&window_samples);
         // let spectrum_window = calculate_window_bh7(&window_samples);
 
         // for (fr, fr_val) in spectrum_window.data().iter() {
@@ -109,6 +111,7 @@ fn spectrum_display(rx: Receiver<isize>) {
             .x_desc("Frequências")
             .y_desc("Magnitude")
             .axis_desc_style(("sans-serif", 20))
+            .y_label_formatter(&(|&x| format!("{:.1}%",100.0* (x as f32/Y_MAX as f32) )))
             .draw().unwrap();
 
         draw_curve(ctx, spectrum_window);
@@ -221,21 +224,31 @@ unsafe fn calculate_window_norm(window_samples: &Vec<f32>) -> FrequencySpectrum{
 }
 
 unsafe fn calculate_window_softmax(window_samples: &Vec<f32>, temperature: f32) -> FrequencySpectrum{
-    Y_MAX = 20_000;
+    let tz = count_trailing_zeros((1.0/LENGTH as f64));
+    Y_MAX = (tz*(1+(20.0/temperature) as i32));
+
     let max = window_samples.iter().fold(0.0, |pivot, &x| if pivot > x {pivot} else {x});
 
-    let normalized_window: Vec<f32> =  window_samples.iter().map(|&x| ((x/max)/temperature).exp() ).collect();
-    NORM = normalized_window.iter()
+    let exp_window: Vec<f32> =  window_samples.iter().map(|&x| ((x/max)/temperature).exp() ).collect();
+    NORM = exp_window.iter()
         .fold(0.0, |sum, num| sum + num);
-    // println!("{}", NORM);
 
-    let fft_window = hamming_window(&normalized_window);
+    let sf_normalized_window: Vec<f32> = exp_window.iter().map(|&x| x/NORM).collect();
+
+    let fft_window = hann_window(&sf_normalized_window);
 
     samples_fft_to_spectrum(
         &fft_window,
         (LENGTH as f32 * 0.845).round() as u32,
         FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
-        Some(&move |val, info| ((val - info.min) / NORM)),
+        // None
+        Some(&move |val, info| {
+            let new_val = (val*10.0_f32.powf(tz as f32));
+            // println!("{}", new_val);
+            new_val
+        }
+
+        ),
     ).unwrap()
 }
 
@@ -270,4 +283,16 @@ fn interpolate_values_set(range: Range<i32>, points: &[(f64, f64)]) -> Vec<(i32,
         .collect();
 
     interpolated_values
+}
+
+fn count_trailing_zeros(num: f64) -> i32 {
+    let mut tmp = num;
+    let mut count = 0;
+
+    while (tmp * 10.0).trunc() < 1.0 {
+        tmp *= 10.0;
+        count += 1;
+    }
+
+    count
 }

@@ -13,10 +13,17 @@ pub fn read_port(sender: SyncSender<isize>) {
     // let port_name = "/dev/ttyACM0";
     let baud_rate = 115200;
 
-    let mut port = serialport::new(port_name, baud_rate)
+    let port = serialport::new(port_name, baud_rate)
         .timeout(Duration::from_millis(10))
-        .open()
-        .expect("Falha ao acessar porta.");
+        .open();
+
+    let mut port = match port {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Falha ao acessar porta: {:?}", e);
+            exit(1);
+        }
+    };
 
     let mut reader = BufReader::new(port);
     loop{
@@ -39,6 +46,11 @@ pub fn read_port(sender: SyncSender<isize>) {
             }
             Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
             // Err(ref e) if e.kind() == io::ErrorKind::TimedOut => eprintln!("Reading Timeout!"),
+            Err(ref e)
+                if e.kind() == io::ErrorKind::BrokenPipe => {
+                    eprintln!("{:?}", e);
+                    exit(1);
+            },
             Err(e) => eprintln!("{:?}", e)
         }
     }
