@@ -15,6 +15,7 @@ use plotters::prelude::{Cartesian2d, Color, IntoDrawingArea, IntoSegmentedCoord,
 use plotters_piston_eeg::{draw_piston_window, PistonBackend};
 use plotters::coord::ranged1d::SegmentedCoord;
 use plotters::coord::types::{RangedCoordf32, RangedCoordf64, RangedCoordi32};
+use rustfft::num_traits::Pow;
 use serialport::new;
 
 use spectrum_analyzer::{samples_fft_to_spectrum, FrequencyLimit, FrequencySpectrum};
@@ -69,9 +70,9 @@ fn spectrum_display(rx: Receiver<isize>) {
         // println!("{:?}", samples);
 
         // let spectrum_window = calculate_window(&window_samples);
-        let spectrum_window = calculate_window_softmax(&window_samples, 10.0);
+        // let spectrum_window = calculate_window_softmax(&window_samples, 5.0);
         // let spectrum_window = calculate_window_norm(&window_samples);
-        // let spectrum_window = calculate_window_bh7(&window_samples);
+        let spectrum_window = calculate_window_bh7(&window_samples);
 
         // for (fr, fr_val) in spectrum_window.data().iter() {
         //     println!("{}Hz => {}", fr, fr_val)
@@ -85,12 +86,12 @@ fn spectrum_display(rx: Receiver<isize>) {
         let range_y = (0f32..Y_MAX as f32);
         // */
 
-        // /* gráfico de comum x:f32
+        /* gráfico de comum x:f32
         let range_x = (0f32..FREQ_QUANTITY as f32);
         let range_y = (0f32..Y_MAX as f32);
         // */
 
-        /* gráfico de barras
+        // /* gráfico de barras
         let range_x = (0..FREQ_QUANTITY).into_segmented();
         let range_y = (0..Y_MAX);
         // */
@@ -114,9 +115,9 @@ fn spectrum_display(rx: Receiver<isize>) {
             .y_label_formatter(&(|&x| format!("{:.1}%",100.0* (x as f32/Y_MAX as f32) )))
             .draw().unwrap();
 
-        draw_curve(ctx, spectrum_window);
+        // draw_curve(ctx, spectrum_window);
         // draw_interpolated_curve(ctx, spectrum_window);
-        // draw_bars(ctx, spectrum_window);
+        draw_bars(ctx, spectrum_window);
         // draw_interpolated_bars(ctx, spectrum_window);
 
         Ok(())
@@ -188,16 +189,24 @@ fn draw_interpolated_curve(mut ctx: ChartContext<PistonBackend, Cartesian2d<Rang
 }
 
 unsafe fn calculate_window_bh7(window_samples: &Vec<f32>) -> FrequencySpectrum{
-    Y_MAX = 250;
     let fft_window = blackman_harris_7term(&window_samples);
+
+    let max = fft_window.iter().fold(0.0, |pivot, &x| if pivot > x {pivot} else {x});
+    let mag_factor = magnitude_adjust_factor(max as f64);
+    // println!("{} {}", max, max_mag);
+    // println!("{:?}", window_samples);
+
+    Y_MAX = 30;
 
     samples_fft_to_spectrum(
         &fft_window,
-        (LENGTH as f32 * 0.845).round() as u32,
+        (LENGTH as f32 * 0.9).round() as u32,
+        // (LENGTH-1) as u32,
         FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
-        Some(&|val, info| {
-            // println!("{}", val);
-            val*1800000.0
+        Some(&move |val, info| {
+            let scaled_val = (val*10.0_f32.powf(mag_factor as f32 - 0.2));
+            // println!("{}", scaled_val);
+            scaled_val
         }),
     ).unwrap()
 }
@@ -224,9 +233,6 @@ unsafe fn calculate_window_norm(window_samples: &Vec<f32>) -> FrequencySpectrum{
 }
 
 unsafe fn calculate_window_softmax(window_samples: &Vec<f32>, temperature: f32) -> FrequencySpectrum{
-    let tz = count_trailing_zeros((1.0/LENGTH as f64));
-    Y_MAX = (tz*(1+(20.0/temperature) as i32));
-
     let max = window_samples.iter().fold(0.0, |pivot, &x| if pivot > x {pivot} else {x});
 
     let exp_window: Vec<f32> =  window_samples.iter().map(|&x| ((x/max)/temperature).exp() ).collect();
@@ -237,34 +243,42 @@ unsafe fn calculate_window_softmax(window_samples: &Vec<f32>, temperature: f32) 
 
     let fft_window = hann_window(&sf_normalized_window);
 
+    let mean = fft_window.iter().fold(0.0, |pivot, &x| pivot+x) as f64/LENGTH as f64;
+
+    let tz = magnitude_adjust_factor(mean);
+    Y_MAX = ((1000*tz as i32));
+
     samples_fft_to_spectrum(
         &fft_window,
-        (LENGTH as f32 * 0.845).round() as u32,
+        (LENGTH as f32 * 0.9).round() as u32,
         FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
-        // None
         Some(&move |val, info| {
-            let new_val = (val*10.0_f32.powf(tz as f32));
+            let new_val = (val*10.0_f32.powf(2.6+tz as f32));
             // println!("{}", new_val);
             new_val
-        }
-
-        ),
+        }),
     ).unwrap()
 }
 
 unsafe fn calculate_window(window_samples: &Vec<f32>) -> FrequencySpectrum{
-    Y_MAX = 30_000;
     let fft_window = hann_window(&window_samples);
+
+    let max = fft_window.iter().fold(0.0, |pivot, &x| if pivot > x {pivot} else {x});
+
+    Y_MAX = (10.0_f32.powf(3.0+max.log10().trunc())) as i32;
 
     samples_fft_to_spectrum(
         &fft_window,
-        (LENGTH as f32 * 0.845).round() as u32,
+        (LENGTH as f32 * 0.9).round() as u32,
         // (LENGTH-1) as u32,
         FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
         // // optional scale
         None
         // Some(&divide_by_N_sqrt)
-        // Some(&|val, info| val - info.min),
+        // Some(&|val, info| {
+        //     println!("y:{} v:{}", Y_MAX, val);
+        //     val
+        // }),
     ).unwrap()
 }
 
@@ -285,7 +299,10 @@ fn interpolate_values_set(range: Range<i32>, points: &[(f64, f64)]) -> Vec<(i32,
     interpolated_values
 }
 
-fn count_trailing_zeros(num: f64) -> i32 {
+fn magnitude_adjust_factor(num: f64) -> i32 {
+    if num>1.0{
+        return 1+num.log10() as i32;
+    }
     let mut tmp = num;
     let mut count = 0;
 
