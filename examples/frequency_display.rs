@@ -31,7 +31,7 @@ mod frequency_reader;
 const LENGTH:usize = 4096;
 const FPS: u32 = 60;
 const FREQ_QUANTITY: i32 = 36;
-static mut Y_MAX: i32 = 100_000;
+static mut Y_MAX: i32 = 0;
 static mut NORM: f32 = 1.0;
 
 fn main() {
@@ -48,7 +48,7 @@ fn spectrum_display(rx: Receiver<isize>) {
 
     let mut samples = BoundedVecDeque::with_capacity(LENGTH, LENGTH);
 
-    let mut window: PistonWindow = WindowSettings::new("Frequências em Tempo Real", [900, 600])
+    let mut window: PistonWindow = WindowSettings::new("Frequências em Tempo Real", [1280, 720])
         .samples(4)
         .build()
         .unwrap();
@@ -69,10 +69,10 @@ fn spectrum_display(rx: Receiver<isize>) {
         let window_samples: Vec<f32> = samples.iter().map(|&x| x as f32).collect();
         // println!("{:?}", samples);
 
-        // let spectrum_window = calculate_window(&window_samples);
+        let spectrum_window = calculate_window(&window_samples);
         // let spectrum_window = calculate_window_softmax(&window_samples, 5.0);
         // let spectrum_window = calculate_window_norm(&window_samples);
-        let spectrum_window = calculate_window_bh7(&window_samples);
+        // let spectrum_window = calculate_window_bh7(&window_samples);
 
         // for (fr, fr_val) in spectrum_window.data().iter() {
         //     println!("{}Hz => {}", fr, fr_val)
@@ -81,17 +81,17 @@ fn spectrum_display(rx: Receiver<isize>) {
         let root = b.into_drawing_area();
         root.fill(&WHITE)?;
 
-        /* gráfico de comum x:i32
-        let range_x = (0..FREQ_QUANTITY);
-        let range_y = (0f32..Y_MAX as f32);
-        // */
-
-        /* gráfico de comum x:f32
+        /* curva crua (x:f32)
         let range_x = (0f32..FREQ_QUANTITY as f32);
         let range_y = (0f32..Y_MAX as f32);
         // */
 
-        // /* gráfico de barras
+        // /* curva interpolada (x:i32)
+        let range_x = (0..FREQ_QUANTITY);
+        let range_y = (0f32..Y_MAX as f32);
+        // */
+
+        /* gráfico de barras
         let range_x = (0..FREQ_QUANTITY).into_segmented();
         let range_y = (0..Y_MAX);
         // */
@@ -102,7 +102,7 @@ fn spectrum_display(rx: Receiver<isize>) {
                 .caption("", ("sans-serif", 40))
                 .set_label_area_size(LabelAreaPosition::Left, 60)
                 .set_label_area_size(LabelAreaPosition::Bottom, 40)
-                .set_label_area_size(LabelAreaPosition::Right, 60)
+                // .set_label_area_size(LabelAreaPosition::Right, 60)
                 .build_cartesian_2d(
                     range_x, range_y
                 )
@@ -110,15 +110,14 @@ fn spectrum_display(rx: Receiver<isize>) {
 
         ctx.configure_mesh()
             .x_desc("Frequências")
-            .y_desc("Magnitude")
+            .y_desc(format!("Magnitude (máxima: {})", Y_MAX))
             .axis_desc_style(("sans-serif", 20))
             .y_label_formatter(&(|&x| format!("{:.1}%",100.0* (x as f32/Y_MAX as f32) )))
             .draw().unwrap();
 
         // draw_curve(ctx, spectrum_window);
-        // draw_interpolated_curve(ctx, spectrum_window);
-        draw_bars(ctx, spectrum_window);
-        // draw_interpolated_bars(ctx, spectrum_window);
+        draw_interpolated_curve(ctx, spectrum_window);
+        // draw_histogram(ctx, spectrum_window);
 
         Ok(())
     }){}
@@ -134,24 +133,7 @@ fn draw_curve(mut ctx: ChartContext<PistonBackend, Cartesian2d<RangedCoordf32, R
     ctx.draw_series(LineSeries::new(curva, &RED)).unwrap();
 }
 
-fn draw_bars(mut ctx: ChartContext<PistonBackend, Cartesian2d<SegmentedCoord<RangedCoordi32>, RangedCoordi32>>, spectrum_window: FrequencySpectrum ) {
-    ctx.draw_series(
-        spectrum_window.data().iter()
-            .map(|(x, y)|
-                (x.val() as f32, y.val() as f32))
-            .map(|(x, y)| {
-                let x_0 = SegmentValue::Exact(x as i32);
-                let x_1 = SegmentValue::Exact((x + 1.0) as i32);
-                let y = y as i32;
-                let mut bar = Rectangle::new([(x_0, 0), (x_1, y)], RED.filled());
-                bar.set_margin(0, 0, 1, 1);
-                bar
-            })
-    )
-        .unwrap();
-}
-
-fn draw_interpolated_bars(mut ctx: ChartContext<PistonBackend, Cartesian2d<SegmentedCoord<RangedCoordi32>, RangedCoordi32>>, spectrum_window: FrequencySpectrum) {
+fn draw_histogram(mut ctx: ChartContext<PistonBackend, Cartesian2d<SegmentedCoord<RangedCoordi32>, RangedCoordi32>>, spectrum_window: FrequencySpectrum) {
     let data = interpolate_values_set((0..FREQ_QUANTITY),
                                       spectrum_window.data().iter()
                                           .map(|(x, y)|
@@ -192,11 +174,9 @@ unsafe fn calculate_window_bh7(window_samples: &Vec<f32>) -> FrequencySpectrum{
     let fft_window = blackman_harris_7term(&window_samples);
 
     let max = fft_window.iter().fold(0.0, |pivot, &x| if pivot > x {pivot} else {x});
-    let mag_factor = magnitude_adjust_factor(max as f64);
+    let mag_factor = (magnitude_adjust_factor(max as f64)+1).max((Y_MAX as f32).log10() as i32);
     // println!("{} {}", max, max_mag);
     // println!("{:?}", window_samples);
-
-    Y_MAX = 30;
 
     samples_fft_to_spectrum(
         &fft_window,
@@ -206,13 +186,13 @@ unsafe fn calculate_window_bh7(window_samples: &Vec<f32>) -> FrequencySpectrum{
         Some(&move |val, info| {
             let scaled_val = (val*10.0_f32.powf(mag_factor as f32 - 0.2));
             // println!("{}", scaled_val);
+            Y_MAX = (Y_MAX).max((scaled_val *1.001).round() as i32);
             scaled_val
         }),
     ).unwrap()
 }
 
 unsafe fn calculate_window_norm(window_samples: &Vec<f32>) -> FrequencySpectrum{
-    Y_MAX = 100;
     let fft_window = hann_window(&window_samples);
 
     NORM = window_samples.iter().fold(0.0, |sum, &num| sum + num.powf(2.0)).sqrt();
@@ -225,8 +205,10 @@ unsafe fn calculate_window_norm(window_samples: &Vec<f32>) -> FrequencySpectrum{
         (LENGTH as f32 * 0.845).round() as u32,
         FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
         Some(&|val, info| {
+            let scaled_val = (10.0*val/NORM);
             // println!("{}", (val/NORM));
-            (10.0*val/NORM)
+            Y_MAX = (Y_MAX).max((scaled_val *1.001).round() as i32);
+            scaled_val
         }
         ),
     ).unwrap()
@@ -245,17 +227,17 @@ unsafe fn calculate_window_softmax(window_samples: &Vec<f32>, temperature: f32) 
 
     let mean = fft_window.iter().fold(0.0, |pivot, &x| pivot+x) as f64/LENGTH as f64;
 
-    let tz = magnitude_adjust_factor(mean);
-    Y_MAX = ((1000*tz as i32));
+    let tz = (magnitude_adjust_factor(mean)+1).max((Y_MAX as f32).log10() as i32);
 
     samples_fft_to_spectrum(
         &fft_window,
         (LENGTH as f32 * 0.9).round() as u32,
         FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
         Some(&move |val, info| {
-            let new_val = (val*10.0_f32.powf(2.6+tz as f32));
-            // println!("{}", new_val);
-            new_val
+            let scaled_val = (val*10.0_f32.powf(tz as f32));
+            println!("y:{} v:{} max:{} y_max:{}, tz:{}", scaled_val, val, info.max, Y_MAX, tz);
+            Y_MAX = (Y_MAX).max((scaled_val *1.001).round() as i32);
+            scaled_val
         }),
     ).unwrap()
 }
@@ -265,20 +247,19 @@ unsafe fn calculate_window(window_samples: &Vec<f32>) -> FrequencySpectrum{
 
     let max = fft_window.iter().fold(0.0, |pivot, &x| if pivot > x {pivot} else {x});
 
-    Y_MAX = (10.0_f32.powf(3.0+max.log10().trunc())) as i32;
-
     samples_fft_to_spectrum(
         &fft_window,
         (LENGTH as f32 * 0.9).round() as u32,
         // (LENGTH-1) as u32,
         FrequencyLimit::Range(1.0, FREQ_QUANTITY as f32),
         // // optional scale
-        None
+        // None
         // Some(&divide_by_N_sqrt)
-        // Some(&|val, info| {
-        //     println!("y:{} v:{}", Y_MAX, val);
-        //     val
-        // }),
+        Some(&|val, info| {
+            println!("y:{} v:{} max:{}", Y_MAX, val, info.max);
+            Y_MAX = (Y_MAX).max((val *1.001).round() as i32);
+            val
+        }),
     ).unwrap()
 }
 
@@ -286,7 +267,7 @@ fn interpolate_values_set(range: Range<i32>, points: &[(f64, f64)]) -> Vec<(i32,
     // Criar um vetor de chaves para a interpolação spline
     let keys: Vec<Key<f64, f64>> =
         points.iter().map(|&(x, y)|
-            Key::new(x, y, Interpolation::Cosine)).collect();
+            Key::new(x, y, Interpolation::CatmullRom)).collect();
 
     let spline = Spline::from_vec(keys);
 
