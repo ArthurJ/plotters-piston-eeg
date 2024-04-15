@@ -12,23 +12,21 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-piston_window = "0.120.0"
+piston_window = "0.131.0"
 serialport = "4.3.0"
 bounded-vec-deque = "0.1.1"
-spectrum-analyzer = "1.5.0"
+num-complex = { version = "0.4.5", features = ["serde"] }
 
+spectrum-analyzer = { git = "https://github.com/ArthurJ/spectrum-analyzer.git" }
 splines = "4.3.1"
 
-num-complex = "0.4.5"
-rustfft = "6.2.0"
-
-dft = "0.5.5"
+easyfft = "0.4.1"
 
 [dependencies.plotters-backend]
 git = "https://github.com/plotters-rs/plotters"
 
 [dev-dependencies]
-systemstat = "0.1.5"
+systemstat = "0.2.3"
 
 [dev-dependencies.plotters]
 default_features = true
